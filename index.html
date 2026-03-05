@@ -288,6 +288,7 @@
             gap: 5px;
             margin-left: auto;
             font-size: 0.8em;
+            flex-wrap: wrap;
         }
 
         .offset-controls label {
@@ -300,6 +301,25 @@
             color: #e0e0e0;
             padding: 2px 5px;
             border-radius: 3px;
+        }
+
+        .offset-enable-label {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            cursor: pointer;
+            margin-right: 10px;
+            padding: 2px 6px;
+            background: rgba(70, 70, 100, 0.5);
+            border-radius: 3px;
+        }
+
+        .offset-enable-label:hover {
+            background: rgba(0, 212, 255, 0.2);
+        }
+
+        .offset-enable-label input {
+            accent-color: #00d4ff;
         }
 
         .file-input-wrapper {
@@ -797,7 +817,7 @@
                     const traceId = `file_${fileName}_${column}`;
                     
                     if (!traceOffsets[traceId]) {
-                        traceOffsets[traceId] = { x: 0, y: 0 };
+                        traceOffsets[traceId] = { x: 0, y: 0, enabled: false };
                     }
                     
                     if (!traceColors[traceId]) {
@@ -805,9 +825,10 @@
                     }
                     
                     const color = traceColors[traceId];
-                    
-                    const xOffset = traceOffsets[traceId].x || 0;
-                    const yOffset = traceOffsets[traceId].y || 0;
+                    const offsetData = traceOffsets[traceId];
+                    const offsetEnabled = offsetData.enabled === true;
+                    const xOffset = offsetEnabled ? (offsetData.x || 0) : 0;
+                    const yOffset = offsetEnabled ? (offsetData.y || 0) : 0;
                     
                     const xData = rows.map((_, i) => (i + startRow) * xScale + xOffset);
                     const yData = rows.map(row => {
@@ -833,8 +854,9 @@
                         name: `${fileName} - ${column}`,
                         color: color,
                         visible: isVisible,
-                        xOffset: xOffset,
-                        yOffset: yOffset
+                        xOffset: offsetData.x || 0,
+                        yOffset: offsetData.y || 0,
+                        offsetEnabled: offsetEnabled
                     });
                 });
             });
@@ -850,11 +872,13 @@
                 const traceId = `segment_${segment.name}_${segment.fileName}_${segment.column}`;
                 
                 if (!traceOffsets[traceId]) {
-                    traceOffsets[traceId] = { x: 0, y: 0 };
+                    traceOffsets[traceId] = { x: 0, y: 0, enabled: false };
                 }
                 
-                const xOffset = traceOffsets[traceId].x || 0;
-                const yOffset = traceOffsets[traceId].y || 0;
+                const offsetData = traceOffsets[traceId];
+                const offsetEnabled = offsetData.enabled === true;
+                const xOffset = offsetEnabled ? (offsetData.x || 0) : 0;
+                const yOffset = offsetEnabled ? (offsetData.y || 0) : 0;
                 
                 const xData = rows.map((_, i) => (i + startRow) * xScale + xOffset);
                 let yData = rows.map(row => {
@@ -889,8 +913,9 @@
                     name: segment.name,
                     color: segment.color,
                     visible: isVisible,
-                    xOffset: xOffset,
-                    yOffset: yOffset
+                    xOffset: offsetData.x || 0,
+                    yOffset: offsetData.y || 0,
+                    offsetEnabled: offsetEnabled
                 });
             });
 
@@ -973,6 +998,10 @@
                     <div class="legend-color" style="background: ${item.color}; opacity: ${item.visible ? 1 : 0.3}"></div>
                     <div class="legend-info" style="opacity: ${item.visible ? 1 : 0.5}">${item.name}</div>
                     <div class="offset-controls">
+                        <label class="offset-enable-label">
+                            <input type="checkbox" ${item.offsetEnabled ? 'checked' : ''} onchange="toggleTraceOffsetEnabled('${item.traceId}', this.checked)">
+                            启用偏移
+                        </label>
                         <label>X:</label>
                         <input type="number" value="${item.xOffset}" step="0.1" style="width: 60px" onchange="updateTraceOffset('${item.traceId}', 'x', this.value)">
                         <label>Y:</label>
@@ -988,16 +1017,24 @@
             updateChart();
         }
 
+        function toggleTraceOffsetEnabled(traceId, enabled) {
+            if (!traceOffsets[traceId]) {
+                traceOffsets[traceId] = { x: 0, y: 0, enabled: false };
+            }
+            traceOffsets[traceId].enabled = enabled;
+            updateChart();
+        }
+
         function updateTraceOffset(traceId, axis, value) {
             if (!traceOffsets[traceId]) {
-                traceOffsets[traceId] = { x: 0, y: 0 };
+                traceOffsets[traceId] = { x: 0, y: 0, enabled: false };
             }
             traceOffsets[traceId][axis] = parseFloat(value) || 0;
             updateChart();
         }
 
         function resetTraceOffset(traceId) {
-            traceOffsets[traceId] = { x: 0, y: 0 };
+            traceOffsets[traceId] = { x: 0, y: 0, enabled: false };
             updateChart();
         }
 
