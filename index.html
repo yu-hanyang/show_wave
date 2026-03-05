@@ -618,6 +618,7 @@
         let viewOffset = 0;
         let viewWindow = 50;
         let traceOffsets = {};
+        let traceColors = {};
         let plotlyLayout = {
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(20,20,40,0.5)',
@@ -781,12 +782,17 @@
                 const rows = file.data.rows.slice(startRow, endRow + 1);
 
                 file.selectedColumns.forEach((column, colIndex) => {
-                    const color = getNextColor();
                     const traceId = `file_${fileName}_${column}`;
                     
                     if (!traceOffsets[traceId]) {
                         traceOffsets[traceId] = { x: 0, y: 0 };
                     }
+                    
+                    if (!traceColors[traceId]) {
+                        traceColors[traceId] = getNextColor();
+                    }
+                    
+                    const color = traceColors[traceId];
                     
                     const xOffset = traceOffsets[traceId].x || 0;
                     const yOffset = traceOffsets[traceId].y || 0;
