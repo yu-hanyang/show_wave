@@ -507,6 +507,84 @@
             font-family: 'Courier New', monospace;
         }
 
+        .time-config {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(100, 100, 150, 0.3);
+        }
+
+        .time-config-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .time-config-header h3 {
+            color: #00d4ff;
+            font-size: 1em;
+            margin: 0;
+        }
+
+        .time-enable-label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+            font-size: 0.85em;
+            background: rgba(70, 70, 100, 0.5);
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+
+        .time-enable-label:hover {
+            background: rgba(0, 212, 255, 0.2);
+        }
+
+        .time-enable-label input {
+            accent-color: #00d4ff;
+        }
+
+        .time-inputs {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .time-input-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .time-input-row label {
+            font-size: 0.85em;
+            color: #aaa;
+            min-width: 80px;
+        }
+
+        .time-input-row input {
+            background: rgba(60, 60, 90, 0.8);
+            border: 1px solid rgba(100, 100, 150, 0.5);
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 5px;
+            font-size: 0.85em;
+            flex: 1;
+        }
+
+        .time-input-row input:focus {
+            outline: none;
+            border-color: #00d4ff;
+        }
+
+        .time-unit {
+            font-size: 0.8em;
+            color: #888;
+            min-width: 30px;
+        }
+
         @media (max-width: 1024px) {
             .container {
                 flex-direction: column;
@@ -548,6 +626,28 @@
                         <input type="radio" name="displayMode" value="lines+markers" onchange="updateDisplayMode()">
                         <span>混合</span>
                     </label>
+                </div>
+
+                <div class="time-config">
+                    <div class="time-config-header">
+                        <h3>⏱️ 时间显示</h3>
+                        <label class="time-enable-label">
+                            <input type="checkbox" id="timeDisplayEnabled" onchange="updateChart()">
+                            启用
+                        </label>
+                    </div>
+                    <div class="time-inputs">
+                        <div class="time-input-row">
+                            <label>时间原点:</label>
+                            <input type="number" id="timeOrigin" value="0" step="0.001" onchange="updateChart()">
+                            <span class="time-unit">ms</span>
+                        </div>
+                        <div class="time-input-row">
+                            <label>时间间隔:</label>
+                            <input type="number" id="timeInterval" value="1" step="0.001" min="0.001" onchange="updateChart()">
+                            <span class="time-unit">ms</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -718,6 +818,18 @@
             hovermode: 'closest'
         };
 
+        function calculateTime(xValue, origin, interval) {
+            return origin + (xValue * interval);
+        }
+
+        function formatTime(timeInMs) {
+            if (Math.abs(timeInMs) >= 1000) {
+                return (timeInMs / 1000).toFixed(3) + ' s';
+            } else {
+                return timeInMs.toFixed(3) + ' ms';
+            }
+        }
+
         function getNextColor() {
             const color = COLORS[colorIndex % COLORS.length];
             colorIndex++;
@@ -845,6 +957,10 @@
             const displayMode = document.querySelector('input[name="displayMode"]:checked').value;
             
             const legendItems = [];
+            
+            const timeEnabled = document.getElementById('timeDisplayEnabled').checked;
+            const timeOrigin = parseFloat(document.getElementById('timeOrigin').value) || 0;
+            const timeInterval = parseFloat(document.getElementById('timeInterval').value) || 1;
 
             Object.keys(files).forEach((fileName, fileIndex) => {
                 const file = files[fileName];
@@ -881,16 +997,41 @@
                     const minY = numericYData.length > 0 ? Math.min(...numericYData) : null;
                     const maxY = numericYData.length > 0 ? Math.max(...numericYData) : null;
 
-                    traces.push({
-                        x: xData,
-                        y: yData,
-                        mode: displayMode,
-                        type: 'scatter',
-                        name: `${fileName} - ${column}`,
-                        line: { color: color, width: 2 },
-                        marker: { color: color, size: 4 },
-                        visible: isVisible
-                    });
+                    let hovertemplate;
+                    if (timeEnabled) {
+                        const timeData = xData.map(x => calculateTime(x, timeOrigin, timeInterval));
+                        hovertemplate = `<b>${fileName} - ${column}</b><br>` +
+                            `X: %{x}<br>` +
+                            `Y: %{y}<br>` +
+                            `时间: %{text}<extra></extra>`;
+                        traces.push({
+                            x: xData,
+                            y: yData,
+                            text: timeData.map(t => formatTime(t)),
+                            mode: displayMode,
+                            type: 'scatter',
+                            name: `${fileName} - ${column}`,
+                            line: { color: color, width: 2 },
+                            marker: { color: color, size: 4 },
+                            visible: isVisible,
+                            hovertemplate: hovertemplate
+                        });
+                    } else {
+                        hovertemplate = `<b>${fileName} - ${column}</b><br>` +
+                            `X: %{x}<br>` +
+                            `Y: %{y}<extra></extra>`;
+                        traces.push({
+                            x: xData,
+                            y: yData,
+                            mode: displayMode,
+                            type: 'scatter',
+                            name: `${fileName} - ${column}`,
+                            line: { color: color, width: 2 },
+                            marker: { color: color, size: 4 },
+                            visible: isVisible,
+                            hovertemplate: hovertemplate
+                        });
+                    }
                     
                     legendItems.push({
                         traceId: traceId,
@@ -942,16 +1083,41 @@
                 
                 const isVisible = traceVisibility[traceId] !== false;
 
-                traces.push({
-                    x: xData,
-                    y: yData,
-                    mode: displayMode,
-                    type: 'scatter',
-                    name: segment.name,
-                    line: { color: segment.color, width: 2 },
-                    marker: { color: segment.color, size: 4 },
-                    visible: isVisible
-                });
+                let hovertemplate;
+                if (timeEnabled) {
+                    const timeData = xData.map(x => calculateTime(x, timeOrigin, timeInterval));
+                    hovertemplate = `<b>${segment.name}</b><br>` +
+                        `X: %{x}<br>` +
+                        `Y: %{y}<br>` +
+                        `时间: %{text}<extra></extra>`;
+                    traces.push({
+                        x: xData,
+                        y: yData,
+                        text: timeData.map(t => formatTime(t)),
+                        mode: displayMode,
+                        type: 'scatter',
+                        name: segment.name,
+                        line: { color: segment.color, width: 2 },
+                        marker: { color: segment.color, size: 4 },
+                        visible: isVisible,
+                        hovertemplate: hovertemplate
+                    });
+                } else {
+                    hovertemplate = `<b>${segment.name}</b><br>` +
+                        `X: %{x}<br>` +
+                        `Y: %{y}<extra></extra>`;
+                    traces.push({
+                        x: xData,
+                        y: yData,
+                        mode: displayMode,
+                        type: 'scatter',
+                        name: segment.name,
+                        line: { color: segment.color, width: 2 },
+                        marker: { color: segment.color, size: 4 },
+                        visible: isVisible,
+                        hovertemplate: hovertemplate
+                    });
+                }
                 
                 const numericYData = yData.filter(y => typeof y === 'number');
                 const segMinY = numericYData.length > 0 ? Math.min(...numericYData) : null;
