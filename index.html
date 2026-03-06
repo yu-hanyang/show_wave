@@ -480,6 +480,33 @@
             cursor: pointer;
         }
 
+        .stats-info {
+            background: rgba(50, 50, 80, 0.6);
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .stats-item {
+            margin-bottom: 8px;
+            line-height: 1.6;
+        }
+
+        .stats-value {
+            margin: 5px 0;
+            padding: 5px 10px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .stats-location {
+            margin: 5px 0;
+            padding: 5px 10px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+
         @media (max-width: 1024px) {
             .container {
                 flex-direction: column;
@@ -562,6 +589,7 @@
                     </div>
                     <button class="btn btn-secondary" onclick="showFormulaModal()">📐 公式运算</button>
                     <button class="btn btn-secondary" onclick="createSegment()">📌 创建数据段</button>
+                    <button class="btn btn-secondary" onclick="showStatsModal()">📊 区域统计</button>
                 </div>
                 
                 <div class="slider-container">
@@ -631,6 +659,40 @@
                 <input type="number" id="segmentEndRow" value="-1" min="-1">
             </div>
             <button class="btn" style="margin-top: 15px; width: 100%;" onclick="confirmCreateSegment()">确认创建</button>
+        </div>
+    </div>
+
+    <div class="modal" id="statsModal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3>📊 区域统计</h3>
+                <button class="modal-close" onclick="closeStatsModal()">&times;</button>
+            </div>
+            <div class="control-group">
+                <label>选择数据源</label>
+                <select id="statsSourceSelect" onchange="updateStatsColumns()">
+                    <option value="">请选择文件或数据段</option>
+                </select>
+            </div>
+            <div class="control-group" style="margin-top: 10px;">
+                <label>选择列（仅文件数据需要）</label>
+                <select id="statsColumnSelect">
+                    <option value="">请先选择数据源</option>
+                </select>
+            </div>
+            <div class="range-selector" style="margin-top: 10px;">
+                <span>起始行:</span>
+                <input type="number" id="statsStartRow" value="0" min="0">
+                <span>结束行:</span>
+                <input type="number" id="statsEndRow" value="-1" min="-1">
+            </div>
+            <button class="btn" style="margin-top: 15px; width: 100%;" onclick="calculateStats()">计算统计信息</button>
+            <div id="statsResults" style="margin-top: 20px; display: none;">
+                <div class="stats-info">
+                    <h4 style="color: #00d4ff; margin-bottom: 10px;">统计结果</h4>
+                    <div id="statsData"></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -779,6 +841,7 @@
             }
             
             updateChart();
+            updateStatsSourceSelect();
         }
 
         function updateRange(fileName, type, value) {
@@ -797,6 +860,7 @@
             renderFilesList();
             updateChart();
             updateLegend();
+            updateStatsSourceSelect();
         }
 
         function updateChart() {
@@ -837,6 +901,10 @@
                     });
                     
                     const isVisible = traceVisibility[traceId] !== false;
+                    
+                    const numericYData = yData.filter(y => typeof y === 'number');
+                    const minY = numericYData.length > 0 ? Math.min(...numericYData) : null;
+                    const maxY = numericYData.length > 0 ? Math.max(...numericYData) : null;
 
                     traces.push({
                         x: xData,
@@ -856,7 +924,9 @@
                         visible: isVisible,
                         xOffset: offsetData.x || 0,
                         yOffset: offsetData.y || 0,
-                        offsetEnabled: offsetEnabled
+                        offsetEnabled: offsetEnabled,
+                        minY: minY,
+                        maxY: maxY
                     });
                 });
             });
@@ -908,6 +978,10 @@
                     visible: isVisible
                 });
                 
+                const numericYData = yData.filter(y => typeof y === 'number');
+                const segMinY = numericYData.length > 0 ? Math.min(...numericYData) : null;
+                const segMaxY = numericYData.length > 0 ? Math.max(...numericYData) : null;
+                
                 legendItems.push({
                     traceId: traceId,
                     name: segment.name,
@@ -915,7 +989,9 @@
                     visible: isVisible,
                     xOffset: offsetData.x || 0,
                     yOffset: offsetData.y || 0,
-                    offsetEnabled: offsetEnabled
+                    offsetEnabled: offsetEnabled,
+                    minY: segMinY,
+                    maxY: segMaxY
                 });
             });
 
@@ -1204,6 +1280,192 @@
             closeSegmentModal();
             updateChart();
             updateFormulaSegmentSelect();
+            updateStatsSourceSelect();
+        }
+
+        function showStatsModal() {
+            updateStatsSourceSelect();
+            document.getElementById('statsModal').classList.add('active');
+        }
+
+        function closeStatsModal() {
+            document.getElementById('statsModal').classList.remove('active');
+        }
+
+        function updateStatsSourceSelect() {
+            const select = document.getElementById('statsSourceSelect');
+            select.innerHTML = '<option value="">请选择文件或数据段</option>';
+            
+            Object.keys(files).forEach(fileName => {
+                const file = files[fileName];
+                file.selectedColumns.forEach(column => {
+                    select.innerHTML += `<option value="file:${fileName}:${column}">文件: ${fileName} - ${column}</option>`;
+                });
+            });
+
+            segments.forEach((segment, index) => {
+                select.innerHTML += `<option value="segment:${index}">数据段: ${segment.name}</option>`;
+            });
+        }
+
+        function updateStatsColumns() {
+            const selectValue = document.getElementById('statsSourceSelect').value;
+            const columnSelect = document.getElementById('statsColumnSelect');
+            
+            if (!selectValue) {
+                columnSelect.innerHTML = '<option value="">请先选择数据源</option>';
+                return;
+            }
+
+            if (selectValue.startsWith('segment:')) {
+                columnSelect.innerHTML = '<option value="N/A">数据段无需选择列</option>';
+                columnSelect.disabled = true;
+            } else if (selectValue.startsWith('file:')) {
+                const parts = selectValue.split(':');
+                const fileName = parts[1];
+                columnSelect.disabled = false;
+                columnSelect.innerHTML = '<option value="">请选择列</option>';
+                
+                if (files[fileName]) {
+                    files[fileName].data.headers.forEach(header => {
+                        columnSelect.innerHTML += `<option value="${header}">${header}</option>`;
+                    });
+                    const selectedColumn = parts[2];
+                    if (selectedColumn) {
+                        columnSelect.value = selectedColumn;
+                    }
+                }
+            }
+
+            const sourceType = selectValue.split(':')[0];
+            if (sourceType === 'file') {
+                const parts = selectValue.split(':');
+                const fileName = parts[1];
+                if (files[fileName]) {
+                    document.getElementById('statsStartRow').value = files[fileName].startRow;
+                    document.getElementById('statsEndRow').value = files[fileName].endRow;
+                }
+            } else if (sourceType === 'segment') {
+                const segmentIndex = parseInt(selectValue.split(':')[1]);
+                if (segments[segmentIndex]) {
+                    document.getElementById('statsStartRow').value = segments[segmentIndex].startRow;
+                    document.getElementById('statsEndRow').value = segments[segmentIndex].endRow;
+                }
+            }
+        }
+
+        function calculateStats() {
+            const selectValue = document.getElementById('statsSourceSelect').value;
+            const startRow = parseInt(document.getElementById('statsStartRow').value) || 0;
+            const endRow = parseInt(document.getElementById('statsEndRow').value) || -1;
+            
+            if (!selectValue) {
+                alert('请选择数据源');
+                return;
+            }
+
+            let yData = [];
+            let xData = [];
+            let sourceName = '';
+
+            if (selectValue.startsWith('file:')) {
+                const parts = selectValue.split(':');
+                const fileName = parts[1];
+                const column = document.getElementById('statsColumnSelect').value;
+                
+                if (!column) {
+                    alert('请选择列');
+                    return;
+                }
+
+                const file = files[fileName];
+                if (!file) {
+                    alert('文件不存在');
+                    return;
+                }
+
+                const actualStartRow = Math.max(0, startRow);
+                const actualEndRow = endRow === -1 ? file.data.rows.length - 1 : Math.min(endRow, file.data.rows.length - 1);
+                const rows = file.data.rows.slice(actualStartRow, actualEndRow + 1);
+
+                yData = rows.map(row => row[column]).filter(val => typeof val === 'number');
+                xData = rows.map((row, i) => i + actualStartRow);
+                sourceName = `${fileName} - ${column}`;
+
+            } else if (selectValue.startsWith('segment:')) {
+                const segmentIndex = parseInt(selectValue.split(':')[1]);
+                const segment = segments[segmentIndex];
+                
+                if (!segment) {
+                    alert('数据段不存在');
+                    return;
+                }
+
+                const file = files[segment.fileName];
+                if (!file) {
+                    alert('源文件不存在');
+                    return;
+                }
+
+                const actualStartRow = Math.max(0, startRow);
+                const actualEndRow = endRow === -1 ? file.data.rows.length - 1 : Math.min(endRow, file.data.rows.length - 1);
+                const rows = file.data.rows.slice(actualStartRow, actualEndRow + 1);
+
+                yData = rows.map(row => row[segment.column]).filter(val => typeof val === 'number');
+                xData = rows.map((row, i) => i + actualStartRow);
+                sourceName = segment.name;
+            }
+
+            if (yData.length === 0) {
+                alert('所选区域没有有效数据');
+                return;
+            }
+
+            const minY = Math.min(...yData);
+            const maxY = Math.max(...yData);
+            const avgY = yData.reduce((a, b) => a + b, 0) / yData.length;
+            const range = maxY - minY;
+            const sum = yData.reduce((a, b) => a + b, 0);
+            
+            const minIndex = yData.indexOf(minY);
+            const maxIndex = yData.indexOf(maxY);
+            const minX = xData[minIndex];
+            const maxX = xData[maxIndex];
+
+            const variance = yData.reduce((acc, val) => acc + Math.pow(val - avgY, 2), 0) / yData.length;
+            const stdDev = Math.sqrt(variance);
+
+            const statsHtml = `
+                <div class="stats-item">
+                    <strong>数据源:</strong> ${sourceName}
+                </div>
+                <div class="stats-item">
+                    <strong>数据范围:</strong> 行 ${startRow} 到 ${endRow === -1 ? '末尾' : endRow}
+                </div>
+                <div class="stats-item">
+                    <strong>数据点数:</strong> ${yData.length}
+                </div>
+                <div class="stats-item" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(100, 100, 150, 0.3);">
+                    <h5 style="color: #ffd93d; margin-bottom: 10px;">最小值信息</h5>
+                    <div class="stats-value">最小值: <span style="color: #6bcb77;">${minY.toFixed(4)}</span></div>
+                    <div class="stats-location">位置（行号）: <span style="color: #00d4ff;">${minX}</span></div>
+                </div>
+                <div class="stats-item" style="margin-top: 10px;">
+                    <h5 style="color: #ffd93d; margin-bottom: 10px;">最大值信息</h5>
+                    <div class="stats-value">最大值: <span style="color: #ff6b6b;">${maxY.toFixed(4)}</span></div>
+                    <div class="stats-location">位置（行号）: <span style="color: #00d4ff;">${maxX}</span></div>
+                </div>
+                <div class="stats-item" style="margin-top: 10px;">
+                    <h5 style="color: #ffd93d; margin-bottom: 10px;">其他统计信息</h5>
+                    <div class="stats-value">平均值: <span style="color: #a29bfe;">${avgY.toFixed(4)}</span></div>
+                    <div class="stats-value">标准差: <span style="color: #a29bfe;">${stdDev.toFixed(4)}</span></div>
+                    <div class="stats-value">峰峰值: <span style="color: #a29bfe;">${range.toFixed(4)}</span></div>
+                    <div class="stats-value">总和: <span style="color: #a29bfe;">${sum.toFixed(4)}</span></div>
+                </div>
+            `;
+
+            document.getElementById('statsData').innerHTML = statsHtml;
+            document.getElementById('statsResults').style.display = 'block';
         }
 
         initChart();
