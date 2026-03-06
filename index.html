@@ -571,30 +571,9 @@
 
             <div class="control-panel">
                 <div class="control-row">
-                    <div class="control-group">
-                        <label>X轴偏移 (Offset)</label>
-                        <input type="number" id="xOffset" value="0" step="0.1" onchange="applyOffsets()">
-                    </div>
-                    <div class="control-group">
-                        <label>Y轴偏移 (Offset)</label>
-                        <input type="number" id="yOffset" value="0" step="0.1" onchange="applyOffsets()">
-                    </div>
-                    <div class="control-group">
-                        <label>X轴缩放</label>
-                        <input type="number" id="xScale" value="1" step="0.1" min="0.1" onchange="applyOffsets()">
-                    </div>
-                    <div class="control-group">
-                        <label>Y轴缩放</label>
-                        <input type="number" id="yScale" value="1" step="0.1" min="0.1" onchange="applyOffsets()">
-                    </div>
                     <button class="btn btn-secondary" onclick="showFormulaModal()">📐 公式运算</button>
                     <button class="btn btn-secondary" onclick="createSegment()">📌 创建数据段</button>
                     <button class="btn btn-secondary" onclick="showStatsModal()">📊 区域统计</button>
-                </div>
-                
-                <div class="slider-container">
-                    <label>波形位置滑动</label>
-                    <input type="range" id="positionSlider" min="0" max="100" value="0" oninput="slideWaveform(this.value)">
                 </div>
             </div>
 
@@ -709,8 +688,6 @@
         let currentData = [];
         let traceVisibility = {};
         let traceCounter = 0;
-        let viewOffset = 0;
-        let viewWindow = 50;
         let traceOffsets = {};
         let traceColors = {};
         let plotlyLayout = {
@@ -866,8 +843,6 @@
         function updateChart() {
             const traces = [];
             const displayMode = document.querySelector('input[name="displayMode"]:checked').value;
-            const xScale = parseFloat(document.getElementById('xScale').value) || 1;
-            const yScale = parseFloat(document.getElementById('yScale').value) || 1;
             
             const legendItems = [];
 
@@ -894,10 +869,10 @@
                     const xOffset = offsetEnabled ? (offsetData.x || 0) : 0;
                     const yOffset = offsetEnabled ? (offsetData.y || 0) : 0;
                     
-                    const xData = rows.map((_, i) => (i + startRow) * xScale + xOffset);
+                    const xData = rows.map((_, i) => (i + startRow) + xOffset);
                     const yData = rows.map(row => {
                         const val = row[column];
-                        return (typeof val === 'number' ? val * yScale + yOffset : val);
+                        return (typeof val === 'number' ? val + yOffset : val);
                     });
                     
                     const isVisible = traceVisibility[traceId] !== false;
@@ -950,10 +925,10 @@
                 const xOffset = offsetEnabled ? (offsetData.x || 0) : 0;
                 const yOffset = offsetEnabled ? (offsetData.y || 0) : 0;
                 
-                const xData = rows.map((_, i) => (i + startRow) * xScale + xOffset);
+                const xData = rows.map((_, i) => (i + startRow) + xOffset);
                 let yData = rows.map(row => {
                     const val = row[segment.column];
-                    return (typeof val === 'number' ? val * yScale + yOffset : val);
+                    return (typeof val === 'number' ? val + yOffset : val);
                 });
 
                 if (segment.formula) {
@@ -1011,25 +986,20 @@
                 }
             });
             
-            const xOffset = parseFloat(document.getElementById('xOffset').value) || 0;
-            const yOffset = parseFloat(document.getElementById('yOffset').value) || 0;
-            
             let layout;
             if (traces.length === 0) {
                 layout = plotlyLayout;
             } else {
-                const xRange = [viewOffset + xOffset, Math.max(viewOffset + viewWindow, maxX) + xOffset];
-                const yRange = [minY + yOffset, maxY + yOffset];
                 layout = {
                     ...plotlyLayout,
                     xaxis: {
                         ...plotlyLayout.xaxis,
-                        range: xRange,
+                        range: [minX, maxX],
                         autorange: false
                     },
                     yaxis: {
                         ...plotlyLayout.yaxis,
-                        range: yRange,
+                        range: [minY, maxY],
                         autorange: false
                     }
                 };
@@ -1118,10 +1088,6 @@
             updateChart();
         }
 
-        function applyOffsets() {
-            updateChart();
-        }
-
         function zoomIn() {
             Plotly.relayout('waveformChart', {
                 'xaxis.range': [plotlyLayout.xaxis.range ? plotlyLayout.xaxis.range[0] * 0.8 : undefined,
@@ -1137,26 +1103,6 @@
         }
 
         function resetZoom() {
-            document.getElementById('xOffset').value = 0;
-            document.getElementById('yOffset').value = 0;
-            document.getElementById('xScale').value = 1;
-            document.getElementById('yScale').value = 1;
-            document.getElementById('positionSlider').value = 0;
-            viewOffset = 0;
-            viewWindow = 50;
-            updateChart();
-        }
-
-        function slideWaveform(value) {
-            let maxX = 0;
-            Object.keys(files).forEach(fileName => {
-                const file = files[fileName];
-                if (file.data.rows.length > maxX) {
-                    maxX = file.data.rows.length;
-                }
-            });
-            
-            viewOffset = parseFloat(value) / 100 * Math.max(0, maxX - viewWindow);
             updateChart();
         }
 
