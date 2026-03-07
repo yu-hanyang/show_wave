@@ -585,6 +585,86 @@
             min-width: 30px;
         }
 
+        .time-column-config {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(100, 100, 150, 0.2);
+        }
+
+        .time-column-config .config-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+
+        .time-column-config label {
+            font-size: 0.8em;
+            color: #aaa;
+            min-width: 70px;
+        }
+
+        .time-column-config select,
+        .time-column-config input {
+            background: rgba(60, 60, 90, 0.8);
+            border: 1px solid rgba(100, 100, 150, 0.5);
+            color: #fff;
+            padding: 5px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+        }
+
+        .time-column-config select:focus,
+        .time-column-config input:focus {
+            outline: none;
+            border-color: #00d4ff;
+        }
+
+        .time-column-enable {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+            font-size: 0.8em;
+            background: rgba(70, 70, 100, 0.5);
+            padding: 3px 8px;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+
+        .time-column-enable:hover {
+            background: rgba(0, 212, 255, 0.2);
+        }
+
+        .time-column-enable input {
+            accent-color: #00d4ff;
+        }
+
+        .timestamp-options {
+            display: none;
+            margin-top: 8px;
+            padding: 8px;
+            background: rgba(50, 50, 80, 0.5);
+            border-radius: 4px;
+        }
+
+        .timestamp-options.active {
+            display: block;
+        }
+
+        .string-time-options {
+            display: none;
+            margin-top: 8px;
+            padding: 8px;
+            background: rgba(50, 50, 80, 0.5);
+            border-radius: 4px;
+        }
+
+        .string-time-options.active {
+            display: block;
+        }
+
         @media (max-width: 1024px) {
             .container {
                 flex-direction: column;
@@ -849,7 +929,7 @@
                         data: parsed,
                         selectedColumns: [],
                         startRow: 0,
-                        endRow: parsed.length - 1
+                        endRow: parsed.rows.length - 1
                     };
                     renderFilesList();
                     updateChart();
@@ -860,17 +940,45 @@
 
         function parseCSV(content) {
             const lines = content.split('\n').filter(line => line.trim());
-            if (lines.length === 0) return [];
+            if (lines.length === 0) return { headers: [], rows: [] };
             
-            const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+            const parseCSVLine = (line) => {
+                const result = [];
+                let current = '';
+                let inQuotes = false;
+                
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    
+                    if (char === '"') {
+                        if (inQuotes && line[i + 1] === '"') {
+                            current += '"';
+                            i++;
+                        } else {
+                            inQuotes = !inQuotes;
+                        }
+                    } else if (char === ',' && !inQuotes) {
+                        result.push(current.trim());
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                result.push(current.trim());
+                return result;
+            };
+            
+            const headers = parseCSVLine(lines[0]);
             const data = [];
             
             for (let i = 1; i < lines.length; i++) {
-                const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+                const values = parseCSVLine(lines[i]);
                 const row = {};
                 headers.forEach((header, index) => {
-                    const val = parseFloat(values[index]);
-                    row[header] = isNaN(val) ? values[index] : val;
+                    const rawValue = values[index] || '';
+                    const val = parseFloat(rawValue);
+                    const isFullyNumeric = !isNaN(val) && String(val) === rawValue.trim();
+                    row[header] = isFullyNumeric ? val : rawValue;
                 });
                 data.push(row);
             }
@@ -882,36 +990,143 @@
             const container = document.getElementById('filesList');
             container.innerHTML = '';
             
+            const escapeHtmlAttr = (str) => String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            
             Object.keys(files).forEach((fileName, fileIndex) => {
                 const file = files[fileName];
                 const div = document.createElement('div');
                 div.className = 'file-item';
+                div.dataset.fileName = fileName;
                 
                 const columnsHtml = file.data.headers.map(header => `
                     <label class="column-checkbox">
                         <input type="checkbox" 
                             ${file.selectedColumns.includes(header) ? 'checked' : ''}
-                            onchange="toggleColumn('${fileName}', '${header}')">
+                            data-header="${escapeHtmlAttr(header)}">
                         ${header}
                     </label>
                 `).join('');
+
+                const timeColumnOptions = file.data.headers.map(header => `
+                    <option value="${escapeHtmlAttr(header)}" ${file.timeColumnConfig && file.timeColumnConfig.column === header ? 'selected' : ''}>${header}</option>
+                `).join('');
+
+                const timeFormat = file.timeColumnConfig ? file.timeColumnConfig.format : 'timestamp';
+                const timestampType = file.timeColumnConfig ? file.timeColumnConfig.timestampType : 'uint32';
+                const timezone = file.timeColumnConfig ? file.timeColumnConfig.timezone : 0;
+                const timeStringFormat = file.timeColumnConfig ? file.timeColumnConfig.timeStringFormat : 'auto';
+                const timeColumnEnabled = file.timeColumnConfig ? file.timeColumnConfig.enabled : false;
                 
                 div.innerHTML = `
                     <div class="file-item-header">
                         <span class="file-name">📄 ${fileName}</span>
-                        <button class="btn btn-danger btn-small" onclick="removeFile('${fileName}')">删除</button>
+                        <button class="btn btn-danger btn-small remove-file-btn">删除</button>
                     </div>
                     <div class="column-selector">${columnsHtml}</div>
                     <div class="range-selector">
                         <span>起始行:</span>
-                        <input type="number" value="${file.startRow}" min="0" 
-                            onchange="updateRange('${fileName}', 'start', this.value)">
+                        <input type="number" class="start-row-input" value="${file.startRow}" min="0">
                         <span>结束行:</span>
-                        <input type="number" value="${file.endRow}" min="-1"
-                            onchange="updateRange('${fileName}', 'end', this.value)">
+                        <input type="number" class="end-row-input" value="${file.endRow}" min="-1">
                     </div>
                     <div class="data-info">共 ${file.data.rows.length} 行数据</div>
+                    <div class="time-column-config">
+                        <label class="time-column-enable">
+                            <input type="checkbox" class="time-column-checkbox" ${timeColumnEnabled ? 'checked' : ''}>
+                            🕐 启用时间列
+                        </label>
+                        <div class="config-row">
+                            <label>时间列:</label>
+                            <select class="time-column-select">
+                                <option value="">选择列</option>
+                                ${timeColumnOptions}
+                            </select>
+                        </div>
+                        <div class="config-row">
+                            <label>时间格式:</label>
+                            <select class="time-format-select">
+                                <option value="timestamp" ${timeFormat === 'timestamp' ? 'selected' : ''}>时间戳</option>
+                                <option value="string" ${timeFormat === 'string' ? 'selected' : ''}>字符串时间</option>
+                            </select>
+                        </div>
+                        <div class="timestamp-options ${timeFormat === 'timestamp' && timeColumnEnabled ? 'active' : ''}" id="timestampOptions_${fileIndex}">
+                            <div class="config-row">
+                                <label>戳类型:</label>
+                                <select class="timestamp-type-select">
+                                    <option value="int32" ${timestampType === 'int32' ? 'selected' : ''}>有符号32位</option>
+                                    <option value="uint32" ${timestampType === 'uint32' ? 'selected' : ''}>无符号32位</option>
+                                    <option value="int64" ${timestampType === 'int64' ? 'selected' : ''}>有符号64位</option>
+                                </select>
+                            </div>
+                            <div class="config-row">
+                                <label>时区:</label>
+                                <select class="timezone-select">
+                                    <option value="-12" ${timezone == -12 ? 'selected' : ''}>UTC-12</option>
+                                    <option value="-11" ${timezone == -11 ? 'selected' : ''}>UTC-11</option>
+                                    <option value="-10" ${timezone == -10 ? 'selected' : ''}>UTC-10</option>
+                                    <option value="-9" ${timezone == -9 ? 'selected' : ''}>UTC-9</option>
+                                    <option value="-8" ${timezone == -8 ? 'selected' : ''}>UTC-8</option>
+                                    <option value="-7" ${timezone == -7 ? 'selected' : ''}>UTC-7</option>
+                                    <option value="-6" ${timezone == -6 ? 'selected' : ''}>UTC-6</option>
+                                    <option value="-5" ${timezone == -5 ? 'selected' : ''}>UTC-5</option>
+                                    <option value="-4" ${timezone == -4 ? 'selected' : ''}>UTC-4</option>
+                                    <option value="-3" ${timezone == -3 ? 'selected' : ''}>UTC-3</option>
+                                    <option value="-2" ${timezone == -2 ? 'selected' : ''}>UTC-2</option>
+                                    <option value="-1" ${timezone == -1 ? 'selected' : ''}>UTC-1</option>
+                                    <option value="0" ${timezone == 0 ? 'selected' : ''}>UTC+0</option>
+                                    <option value="1" ${timezone == 1 ? 'selected' : ''}>UTC+1</option>
+                                    <option value="2" ${timezone == 2 ? 'selected' : ''}>UTC+2</option>
+                                    <option value="3" ${timezone == 3 ? 'selected' : ''}>UTC+3</option>
+                                    <option value="4" ${timezone == 4 ? 'selected' : ''}>UTC+4</option>
+                                    <option value="5" ${timezone == 5 ? 'selected' : ''}>UTC+5</option>
+                                    <option value="6" ${timezone == 6 ? 'selected' : ''}>UTC+6</option>
+                                    <option value="7" ${timezone == 7 ? 'selected' : ''}>UTC+7</option>
+                                    <option value="8" ${timezone == 8 ? 'selected' : ''}>UTC+8 (北京)</option>
+                                    <option value="9" ${timezone == 9 ? 'selected' : ''}>UTC+9</option>
+                                    <option value="10" ${timezone == 10 ? 'selected' : ''}>UTC+10</option>
+                                    <option value="11" ${timezone == 11 ? 'selected' : ''}>UTC+11</option>
+                                    <option value="12" ${timezone == 12 ? 'selected' : ''}>UTC+12</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="string-time-options ${timeFormat === 'string' && timeColumnEnabled ? 'active' : ''}" id="stringTimeOptions_${fileIndex}">
+                            <div class="config-row">
+                                <label>格式:</label>
+                                <select class="time-string-format-select">
+                                    <option value="auto" ${timeStringFormat === 'auto' ? 'selected' : ''}>自动检测</option>
+                                    <option value="yyyy/mm/dd_hms_ms" ${timeStringFormat === 'yyyy/mm/dd_hms_ms' ? 'selected' : ''}>yyyy/mm/dd h:mm:ss.000</option>
+                                    <option value="yyyy/mm/dd_hms" ${timeStringFormat === 'yyyy/mm/dd_hms' ? 'selected' : ''}>yyyy/mm/dd h:mm:ss</option>
+                                    <option value="hms_ms" ${timeStringFormat === 'hms_ms' ? 'selected' : ''}>h:mm:ss.000</option>
+                                    <option value="hms" ${timeStringFormat === 'hms' ? 'selected' : ''}>h:mm:ss</option>
+                                    <option value="ms_ms" ${timeStringFormat === 'ms_ms' ? 'selected' : ''}>mm:ss.0</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
                 `;
+                
+                div.querySelector('.remove-file-btn').addEventListener('click', () => removeFile(fileName));
+                div.querySelector('.start-row-input').addEventListener('change', (e) => updateRange(fileName, 'start', e.target.value));
+                div.querySelector('.end-row-input').addEventListener('change', (e) => updateRange(fileName, 'end', e.target.value));
+                div.querySelector('.time-column-checkbox').addEventListener('change', (e) => toggleTimeColumnEnabled(fileName, e.target.checked));
+                div.querySelector('.time-column-select').addEventListener('change', (e) => updateTimeColumnConfig(fileName, 'column', e.target.value));
+                
+                const timeFormatSelect = div.querySelector('.time-format-select');
+                timeFormatSelect.addEventListener('change', (e) => {
+                    updateTimeColumnConfig(fileName, 'format', e.target.value);
+                    updateTimeFormatOptions(fileName);
+                });
+                
+                div.querySelector('.timestamp-type-select').addEventListener('change', (e) => updateTimeColumnConfig(fileName, 'timestampType', e.target.value));
+                div.querySelector('.timezone-select').addEventListener('change', (e) => updateTimeColumnConfig(fileName, 'timezone', e.target.value));
+                div.querySelector('.time-string-format-select').addEventListener('change', (e) => updateTimeColumnConfig(fileName, 'timeStringFormat', e.target.value));
+                
+                div.querySelectorAll('.column-checkbox input').forEach(checkbox => {
+                    checkbox.addEventListener('change', (e) => {
+                        const header = e.target.dataset.header;
+                        toggleColumn(fileName, header);
+                    });
+                });
                 
                 container.appendChild(div);
             });
@@ -948,8 +1163,171 @@
             segments = segments.filter(s => s.fileName !== fileName);
             renderFilesList();
             updateChart();
-            updateLegend();
             updateStatsSourceSelect();
+        }
+
+        function initTimeColumnConfig(fileName) {
+            if (!files[fileName].timeColumnConfig) {
+                files[fileName].timeColumnConfig = {
+                    enabled: false,
+                    column: '',
+                    format: 'timestamp',
+                    timestampType: 'uint32',
+                    timezone: 8,
+                    timeStringFormat: 'auto'
+                };
+            }
+        }
+
+        function toggleTimeColumnEnabled(fileName, enabled) {
+            initTimeColumnConfig(fileName);
+            files[fileName].timeColumnConfig.enabled = enabled;
+            renderFilesList();
+            updateChart();
+        }
+
+        function updateTimeColumnConfig(fileName, key, value) {
+            initTimeColumnConfig(fileName);
+            files[fileName].timeColumnConfig[key] = value;
+            updateChart();
+        }
+
+        function updateTimeFormatOptions(fileName) {
+            const fileIndex = Object.keys(files).indexOf(fileName);
+            const file = files[fileName];
+            if (!file || !file.timeColumnConfig) return;
+
+            const timestampOptions = document.getElementById(`timestampOptions_${fileIndex}`);
+            const stringTimeOptions = document.getElementById(`stringTimeOptions_${fileIndex}`);
+
+            if (timestampOptions && stringTimeOptions) {
+                if (file.timeColumnConfig.format === 'timestamp' && file.timeColumnConfig.enabled) {
+                    timestampOptions.classList.add('active');
+                    stringTimeOptions.classList.remove('active');
+                } else if (file.timeColumnConfig.format === 'string' && file.timeColumnConfig.enabled) {
+                    timestampOptions.classList.remove('active');
+                    stringTimeOptions.classList.add('active');
+                } else {
+                    timestampOptions.classList.remove('active');
+                    stringTimeOptions.classList.remove('active');
+                }
+            }
+        }
+
+        function parseTimestampValue(value, timestampType) {
+            let numValue = value;
+            if (typeof value === 'string') {
+                if (timestampType === 'int64') {
+                    numValue = BigInt(value);
+                } else {
+                    numValue = parseFloat(value);
+                }
+            }
+
+            if (timestampType === 'int64') {
+                return Number(numValue);
+            } else if (timestampType === 'uint32') {
+                let uint32Value = Number(numValue);
+                if (uint32Value < 0) {
+                    uint32Value = uint32Value >>> 0;
+                }
+                return uint32Value;
+            } else {
+                return Number(numValue);
+            }
+        }
+
+        function parseTimeStringToTimestamp(timeStr, format) {
+            if (!timeStr || typeof timeStr !== 'string') return null;
+
+            timeStr = timeStr.trim();
+
+            const tryParseWithFormat = (str, pattern) => {
+                const now = new Date();
+                let year = now.getFullYear();
+                let month = now.getMonth();
+                let day = now.getDate();
+                let hours = 0, minutes = 0, seconds = 0, ms = 0;
+
+                if (pattern === 'yyyy/mm/dd_hms_ms' || pattern === 'yyyy/mm/dd_hms') {
+                    const dateMatch = str.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+                    if (dateMatch) {
+                        year = parseInt(dateMatch[1]);
+                        month = parseInt(dateMatch[2]) - 1;
+                        day = parseInt(dateMatch[3]);
+                    }
+                }
+
+                const timeMatch = str.match(/(\d{1,2}):(\d{1,2}):(\d{1,2})(?:\.(\d+))?/);
+                if (timeMatch) {
+                    hours = parseInt(timeMatch[1]);
+                    minutes = parseInt(timeMatch[2]);
+                    seconds = parseInt(timeMatch[3]);
+                    if (timeMatch[4]) {
+                        ms = parseInt(timeMatch[4].padEnd(3, '0').substring(0, 3));
+                    }
+                }
+
+                return new Date(year, month, day, hours, minutes, seconds, ms).getTime();
+            };
+
+            if (format === 'auto') {
+                return tryParseWithFormat(timeStr, 'auto');
+            }
+
+            return tryParseWithFormat(timeStr, format);
+        }
+
+        function parseTimeValue(value, config) {
+            if (value === null || value === undefined || value === '') return null;
+
+            let timestampMs;
+
+            if (config.format === 'timestamp') {
+                const rawValue = parseTimestampValue(value, config.timestampType);
+                
+                if (config.timestampType === 'int64') {
+                    timestampMs = rawValue;
+                } else {
+                    timestampMs = rawValue * 1000;
+                }
+            } else {
+                timestampMs = parseTimeStringToTimestamp(value, config.timeStringFormat);
+            }
+
+            if (timestampMs === null || isNaN(timestampMs)) return null;
+
+            const timezoneOffset = (parseInt(config.timezone) - 8) * 60 * 60 * 1000;
+            timestampMs -= timezoneOffset;
+
+            return timestampMs;
+        }
+
+        function formatDateTime(timestampMs) {
+            if (timestampMs === null || isNaN(timestampMs)) return 'N/A';
+            
+            const date = new Date(timestampMs);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+            const ms = String(date.getMilliseconds()).padStart(3, '0');
+            
+            return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}.${ms}`;
+        }
+
+        function formatDateTimeShort(timestampMs) {
+            if (timestampMs === null || isNaN(timestampMs)) return 'N/A';
+            
+            const date = new Date(timestampMs);
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+            const ms = String(date.getMilliseconds()).padStart(3, '0');
+            
+            return `${hours}:${minutes}:${seconds}.${ms}`;
         }
 
         function updateChart() {
@@ -962,11 +1340,23 @@
             const timeOrigin = parseFloat(document.getElementById('timeOrigin').value) || 0;
             const timeInterval = parseFloat(document.getElementById('timeInterval').value) || 1;
 
+            let hasAnyTimeColumn = false;
+            Object.keys(files).forEach(fileName => {
+                const file = files[fileName];
+                if (file.timeColumnConfig && file.timeColumnConfig.enabled && file.timeColumnConfig.column) {
+                    hasAnyTimeColumn = true;
+                }
+            });
+
             Object.keys(files).forEach((fileName, fileIndex) => {
                 const file = files[fileName];
                 const startRow = Math.max(0, file.startRow);
                 const endRow = file.endRow === -1 ? file.data.rows.length - 1 : Math.min(file.endRow, file.data.rows.length - 1);
                 const rows = file.data.rows.slice(startRow, endRow + 1);
+
+                const useTimeColumn = file.timeColumnConfig && 
+                                      file.timeColumnConfig.enabled && 
+                                      file.timeColumnConfig.column;
 
                 file.selectedColumns.forEach((column, colIndex) => {
                     const traceId = `file_${fileName}_${column}`;
@@ -985,65 +1375,156 @@
                     const xOffset = offsetEnabled ? (offsetData.x || 0) : 0;
                     const yOffset = offsetEnabled ? (offsetData.y || 0) : 0;
                     
-                    const xData = rows.map((_, i) => (i + startRow) + xOffset);
-                    const yData = rows.map(row => {
-                        const val = row[column];
-                        return (typeof val === 'number' ? val + yOffset : val);
-                    });
+                    const originalXData = rows.map((_, i) => (i + startRow) + xOffset);
+                    let xData, yData;
                     
-                    const isVisible = traceVisibility[traceId] !== false;
-                    
-                    const numericYData = yData.filter(y => typeof y === 'number');
-                    const minY = numericYData.length > 0 ? Math.min(...numericYData) : null;
-                    const maxY = numericYData.length > 0 ? Math.max(...numericYData) : null;
-
-                    let hovertemplate;
-                    if (timeEnabled) {
-                        const timeData = xData.map(x => calculateTime(x, timeOrigin, timeInterval));
-                        hovertemplate = `<b>${fileName} - ${column}</b><br>` +
-                            `X: %{x}<br>` +
-                            `Y: %{y}<br>` +
-                            `时间: %{text}<extra></extra>`;
-                        traces.push({
-                            x: xData,
-                            y: yData,
-                            text: timeData.map(t => formatTime(t)),
-                            mode: displayMode,
-                            type: 'scatter',
+                    if (useTimeColumn) {
+                        const timeCol = file.timeColumnConfig.column;
+                        console.log('使用时间列:', timeCol, '配置:', file.timeColumnConfig);
+                        const timeDataArray = rows.map((row, idx) => {
+                            const rawVal = row[timeCol];
+                            const parsedVal = parseTimeValue(rawVal, file.timeColumnConfig);
+                            console.log('行', idx + startRow, '原始值:', rawVal, '解析后:', parsedVal);
+                            return parsedVal;
+                        });
+                        
+                        const validIndices = [];
+                        timeDataArray.forEach((t, i) => {
+                            if (t !== null && !isNaN(t) && isFinite(t)) {
+                                validIndices.push(i);
+                            }
+                        });
+                        
+                        console.log('有效索引数量:', validIndices.length, '/', rows.length);
+                        
+                        const isVisible = traceVisibility[traceId] !== false;
+                        
+                        if (validIndices.length > 0) {
+                            xData = validIndices.map(i => timeDataArray[i]);
+                            yData = validIndices.map(i => {
+                                const val = rows[i][column];
+                                return (typeof val === 'number' ? val + yOffset : val);
+                            });
+                            const filteredOriginalX = validIndices.map(i => originalXData[i]);
+                            
+                            const hovertemplate = `<b>${fileName} - ${column}</b><br>` +
+                                `X (行号): %{customdata}<br>` +
+                                `Y: %{y}<br>` +
+                                `时间: %{text}<extra></extra>`;
+                            
+                            traces.push({
+                                x: xData,
+                                y: yData,
+                                customdata: filteredOriginalX,
+                                text: xData.map(t => formatDateTime(t)),
+                                mode: displayMode,
+                                type: 'scatter',
+                                name: `${fileName} - ${column}`,
+                                line: { color: color, width: 2 },
+                                marker: { color: color, size: 4 },
+                                visible: isVisible,
+                                hovertemplate: hovertemplate
+                            });
+                        } else {
+                            xData = originalXData;
+                            yData = rows.map(row => {
+                                const val = row[column];
+                                return (typeof val === 'number' ? val + yOffset : val);
+                            });
+                            
+                            const hovertemplate = `<b>${fileName} - ${column}</b><br>` +
+                                `X: %{x}<br>` +
+                                `Y: %{y}<extra></extra>`;
+                            
+                            traces.push({
+                                x: xData,
+                                y: yData,
+                                mode: displayMode,
+                                type: 'scatter',
+                                name: `${fileName} - ${column}`,
+                                line: { color: color, width: 2 },
+                                marker: { color: color, size: 4 },
+                                visible: isVisible,
+                                hovertemplate: hovertemplate
+                            });
+                        }
+                        
+                        const numericYData = yData.filter(y => typeof y === 'number');
+                        const minY = numericYData.length > 0 ? Math.min(...numericYData) : null;
+                        const maxY = numericYData.length > 0 ? Math.max(...numericYData) : null;
+                        
+                        legendItems.push({
+                            traceId: traceId,
                             name: `${fileName} - ${column}`,
-                            line: { color: color, width: 2 },
-                            marker: { color: color, size: 4 },
+                            color: color,
                             visible: isVisible,
-                            hovertemplate: hovertemplate
+                            xOffset: offsetData.x || 0,
+                            yOffset: offsetData.y || 0,
+                            offsetEnabled: offsetEnabled,
+                            minY: minY,
+                            maxY: maxY
                         });
                     } else {
-                        hovertemplate = `<b>${fileName} - ${column}</b><br>` +
-                            `X: %{x}<br>` +
-                            `Y: %{y}<extra></extra>`;
-                        traces.push({
-                            x: xData,
-                            y: yData,
-                            mode: displayMode,
-                            type: 'scatter',
+                        xData = originalXData;
+                        yData = rows.map(row => {
+                            const val = row[column];
+                            return (typeof val === 'number' ? val + yOffset : val);
+                        });
+                        
+                        const isVisible = traceVisibility[traceId] !== false;
+                        
+                        const numericYData = yData.filter(y => typeof y === 'number');
+                        const minY = numericYData.length > 0 ? Math.min(...numericYData) : null;
+                        const maxY = numericYData.length > 0 ? Math.max(...numericYData) : null;
+
+                        let hovertemplate;
+                        if (timeEnabled) {
+                            const timeData = xData.map(x => calculateTime(x, timeOrigin, timeInterval));
+                            hovertemplate = `<b>${fileName} - ${column}</b><br>` +
+                                `X: %{x}<br>` +
+                                `Y: %{y}<br>` +
+                                `时间: %{text}<extra></extra>`;
+                            traces.push({
+                                x: xData,
+                                y: yData,
+                                text: timeData.map(t => formatTime(t)),
+                                mode: displayMode,
+                                type: 'scatter',
+                                name: `${fileName} - ${column}`,
+                                line: { color: color, width: 2 },
+                                marker: { color: color, size: 4 },
+                                visible: isVisible,
+                                hovertemplate: hovertemplate
+                            });
+                        } else {
+                            hovertemplate = `<b>${fileName} - ${column}</b><br>` +
+                                `X: %{x}<br>` +
+                                `Y: %{y}<extra></extra>`;
+                            traces.push({
+                                x: xData,
+                                y: yData,
+                                mode: displayMode,
+                                type: 'scatter',
+                                name: `${fileName} - ${column}`,
+                                line: { color: color, width: 2 },
+                                marker: { color: color, size: 4 },
+                                visible: isVisible,
+                                hovertemplate: hovertemplate
+                            });
+                        }
+                        
+                        legendItems.push({
+                            traceId: traceId,
                             name: `${fileName} - ${column}`,
-                            line: { color: color, width: 2 },
-                            marker: { color: color, size: 4 },
+                            color: color,
                             visible: isVisible,
-                            hovertemplate: hovertemplate
+                            xOffset: offsetData.x || 0,
+                            yOffset: offsetData.y || 0,
+                            offsetEnabled: offsetEnabled,
+                            minY: minY,
+                            maxY: maxY
                         });
                     }
-                    
-                    legendItems.push({
-                        traceId: traceId,
-                        name: `${fileName} - ${column}`,
-                        color: color,
-                        visible: isVisible,
-                        xOffset: offsetData.x || 0,
-                        yOffset: offsetData.y || 0,
-                        offsetEnabled: offsetEnabled,
-                        minY: minY,
-                        maxY: maxY
-                    });
                 });
             });
 
@@ -1066,106 +1547,258 @@
                 const xOffset = offsetEnabled ? (offsetData.x || 0) : 0;
                 const yOffset = offsetEnabled ? (offsetData.y || 0) : 0;
                 
-                const xData = rows.map((_, i) => (i + startRow) + xOffset);
-                let yData = rows.map(row => {
-                    const val = row[segment.column];
-                    return (typeof val === 'number' ? val + yOffset : val);
-                });
-
-                if (segment.formula) {
-                    yData = yData.map(y => {
-                        if (typeof y === 'number') {
-                            return evaluateFormula(segment.formula, y);
-                        }
-                        return y;
-                    });
-                }
+                const useTimeColumn = file.timeColumnConfig && 
+                                      file.timeColumnConfig.enabled && 
+                                      file.timeColumnConfig.column;
                 
-                const isVisible = traceVisibility[traceId] !== false;
+                let xData, yData;
+                
+                if (useTimeColumn) {
+                    const timeCol = file.timeColumnConfig.column;
+                    const timeDataArray = rows.map(row => {
+                        return parseTimeValue(row[timeCol], file.timeColumnConfig);
+                    });
+                    
+                    const validIndices = [];
+                    timeDataArray.forEach((t, i) => {
+                        if (t !== null && !isNaN(t) && isFinite(t)) {
+                            validIndices.push(i);
+                        }
+                    });
+                    
+                    const isVisible = traceVisibility[traceId] !== false;
+                    
+                    if (validIndices.length > 0) {
+                        xData = validIndices.map(i => timeDataArray[i]);
+                        yData = validIndices.map(i => {
+                            const val = rows[i][segment.column];
+                            return (typeof val === 'number' ? val + yOffset : val);
+                        });
 
-                let hovertemplate;
-                if (timeEnabled) {
-                    const timeData = xData.map(x => calculateTime(x, timeOrigin, timeInterval));
-                    hovertemplate = `<b>${segment.name}</b><br>` +
-                        `X: %{x}<br>` +
-                        `Y: %{y}<br>` +
-                        `时间: %{text}<extra></extra>`;
-                    traces.push({
-                        x: xData,
-                        y: yData,
-                        text: timeData.map(t => formatTime(t)),
-                        mode: displayMode,
-                        type: 'scatter',
+                        if (segment.formula) {
+                            yData = yData.map(y => {
+                                if (typeof y === 'number') {
+                                    return evaluateFormula(segment.formula, y);
+                                }
+                                return y;
+                            });
+                        }
+                        
+                        const originalXData = validIndices.map(i => (i + startRow) + xOffset);
+                        
+                        const hovertemplate = `<b>${segment.name}</b><br>` +
+                            `X (行号): %{customdata}<br>` +
+                            `Y: %{y}<br>` +
+                            `时间: %{text}<extra></extra>`;
+                        
+                        traces.push({
+                            x: xData,
+                            y: yData,
+                            customdata: originalXData,
+                            text: xData.map(t => formatDateTime(t)),
+                            mode: displayMode,
+                            type: 'scatter',
+                            name: segment.name,
+                            line: { color: segment.color, width: 2 },
+                            marker: { color: segment.color, size: 4 },
+                            visible: isVisible,
+                            hovertemplate: hovertemplate
+                        });
+                    } else {
+                        const originalXData = rows.map((_, i) => (i + startRow) + xOffset);
+                        yData = rows.map(row => {
+                            const val = row[segment.column];
+                            return (typeof val === 'number' ? val + yOffset : val);
+                        });
+
+                        if (segment.formula) {
+                            yData = yData.map(y => {
+                                if (typeof y === 'number') {
+                                    return evaluateFormula(segment.formula, y);
+                                }
+                                return y;
+                            });
+                        }
+                        
+                        xData = originalXData;
+                        
+                        let hovertemplate;
+                        if (timeEnabled) {
+                            const timeData = xData.map(x => calculateTime(x, timeOrigin, timeInterval));
+                            hovertemplate = `<b>${segment.name}</b><br>` +
+                                `X: %{x}<br>` +
+                                `Y: %{y}<br>` +
+                                `时间: %{text}<extra></extra>`;
+                            traces.push({
+                                x: xData,
+                                y: yData,
+                                text: timeData.map(t => formatTime(t)),
+                                mode: displayMode,
+                                type: 'scatter',
+                                name: segment.name,
+                                line: { color: segment.color, width: 2 },
+                                marker: { color: segment.color, size: 4 },
+                                visible: isVisible,
+                                hovertemplate: hovertemplate
+                            });
+                        } else {
+                            hovertemplate = `<b>${segment.name}</b><br>` +
+                                `X: %{x}<br>` +
+                                `Y: %{y}<extra></extra>`;
+                            traces.push({
+                                x: xData,
+                                y: yData,
+                                mode: displayMode,
+                                type: 'scatter',
+                                name: segment.name,
+                                line: { color: segment.color, width: 2 },
+                                marker: { color: segment.color, size: 4 },
+                                visible: isVisible,
+                                hovertemplate: hovertemplate
+                            });
+                        }
+                    }
+                    
+                    const numericYData = yData.filter(y => typeof y === 'number');
+                    const segMinY = numericYData.length > 0 ? Math.min(...numericYData) : null;
+                    const segMaxY = numericYData.length > 0 ? Math.max(...numericYData) : null;
+                    
+                    legendItems.push({
+                        traceId: traceId,
                         name: segment.name,
-                        line: { color: segment.color, width: 2 },
-                        marker: { color: segment.color, size: 4 },
+                        color: segment.color,
                         visible: isVisible,
-                        hovertemplate: hovertemplate
+                        xOffset: offsetData.x || 0,
+                        yOffset: offsetData.y || 0,
+                        offsetEnabled: offsetEnabled,
+                        minY: segMinY,
+                        maxY: segMaxY
                     });
                 } else {
-                    hovertemplate = `<b>${segment.name}</b><br>` +
-                        `X: %{x}<br>` +
-                        `Y: %{y}<extra></extra>`;
-                    traces.push({
-                        x: xData,
-                        y: yData,
-                        mode: displayMode,
-                        type: 'scatter',
+                    const originalXData = rows.map((_, i) => (i + startRow) + xOffset);
+                    yData = rows.map(row => {
+                        const val = row[segment.column];
+                        return (typeof val === 'number' ? val + yOffset : val);
+                    });
+
+                    if (segment.formula) {
+                        yData = yData.map(y => {
+                            if (typeof y === 'number') {
+                                return evaluateFormula(segment.formula, y);
+                            }
+                            return y;
+                        });
+                    }
+                    
+                    xData = originalXData;
+                    const isVisible = traceVisibility[traceId] !== false;
+
+                    let hovertemplate;
+                    if (timeEnabled) {
+                        const timeData = xData.map(x => calculateTime(x, timeOrigin, timeInterval));
+                        hovertemplate = `<b>${segment.name}</b><br>` +
+                            `X: %{x}<br>` +
+                            `Y: %{y}<br>` +
+                            `时间: %{text}<extra></extra>`;
+                        traces.push({
+                            x: xData,
+                            y: yData,
+                            text: timeData.map(t => formatTime(t)),
+                            mode: displayMode,
+                            type: 'scatter',
+                            name: segment.name,
+                            line: { color: segment.color, width: 2 },
+                            marker: { color: segment.color, size: 4 },
+                            visible: isVisible,
+                            hovertemplate: hovertemplate
+                        });
+                    } else {
+                        hovertemplate = `<b>${segment.name}</b><br>` +
+                            `X: %{x}<br>` +
+                            `Y: %{y}<extra></extra>`;
+                        traces.push({
+                            x: xData,
+                            y: yData,
+                            mode: displayMode,
+                            type: 'scatter',
+                            name: segment.name,
+                            line: { color: segment.color, width: 2 },
+                            marker: { color: segment.color, size: 4 },
+                            visible: isVisible,
+                            hovertemplate: hovertemplate
+                        });
+                    }
+                    
+                    const numericYData = yData.filter(y => typeof y === 'number');
+                    const segMinY = numericYData.length > 0 ? Math.min(...numericYData) : null;
+                    const segMaxY = numericYData.length > 0 ? Math.max(...numericYData) : null;
+                    
+                    legendItems.push({
+                        traceId: traceId,
                         name: segment.name,
-                        line: { color: segment.color, width: 2 },
-                        marker: { color: segment.color, size: 4 },
+                        color: segment.color,
                         visible: isVisible,
-                        hovertemplate: hovertemplate
+                        xOffset: offsetData.x || 0,
+                        yOffset: offsetData.y || 0,
+                        offsetEnabled: offsetEnabled,
+                        minY: segMinY,
+                        maxY: segMaxY
                     });
                 }
-                
-                const numericYData = yData.filter(y => typeof y === 'number');
-                const segMinY = numericYData.length > 0 ? Math.min(...numericYData) : null;
-                const segMaxY = numericYData.length > 0 ? Math.max(...numericYData) : null;
-                
-                legendItems.push({
-                    traceId: traceId,
-                    name: segment.name,
-                    color: segment.color,
-                    visible: isVisible,
-                    xOffset: offsetData.x || 0,
-                    yOffset: offsetData.y || 0,
-                    offsetEnabled: offsetEnabled,
-                    minY: segMinY,
-                    maxY: segMaxY
-                });
             });
 
             let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
             traces.forEach(trace => {
                 if (trace.x && trace.x.length > 0) {
-                    const xMin = Math.min(...trace.x);
-                    const xMax = Math.max(...trace.x);
-                    if (xMin < minX) minX = xMin;
-                    if (xMax > maxX) maxX = xMax;
+                    const validX = trace.x.filter(x => x !== null && !isNaN(x) && isFinite(x));
+                    if (validX.length > 0) {
+                        const xMin = Math.min(...validX);
+                        const xMax = Math.max(...validX);
+                        if (xMin < minX) minX = xMin;
+                        if (xMax > maxX) maxX = xMax;
+                    }
                 }
-                if (trace.y && trace.y.length > 0 && typeof trace.y[0] === 'number') {
-                    const yMin = Math.min(...trace.y);
-                    const yMax = Math.max(...trace.y);
-                    if (yMin < minY) minY = yMin;
-                    if (yMax > maxY) maxY = yMax;
+                if (trace.y && trace.y.length > 0) {
+                    const validY = trace.y.filter(y => typeof y === 'number' && !isNaN(y) && isFinite(y));
+                    if (validY.length > 0) {
+                        const yMin = Math.min(...validY);
+                        const yMax = Math.max(...validY);
+                        if (yMin < minY) minY = yMin;
+                        if (yMax > maxY) maxY = yMax;
+                    }
                 }
             });
             
             let layout;
-            if (traces.length === 0) {
-                layout = plotlyLayout;
-            } else {
+            if (traces.length === 0 || !isFinite(minX) || !isFinite(maxX)) {
                 layout = {
                     ...plotlyLayout,
                     xaxis: {
                         ...plotlyLayout.xaxis,
-                        range: [minX, maxX],
-                        autorange: false
+                        title: hasAnyTimeColumn ? '时间' : 'X轴',
+                        autorange: true,
+                        type: hasAnyTimeColumn ? 'date' : '-'
                     },
                     yaxis: {
                         ...plotlyLayout.yaxis,
-                        range: [minY, maxY],
+                        autorange: true
+                    }
+                };
+            } else {
+                const xAxisTitle = hasAnyTimeColumn ? '时间' : 'X轴';
+                const yPadding = (maxY - minY) * 0.05 || 1;
+                layout = {
+                    ...plotlyLayout,
+                    xaxis: {
+                        ...plotlyLayout.xaxis,
+                        title: xAxisTitle,
+                        range: [minX, maxX],
+                        autorange: false,
+                        type: hasAnyTimeColumn ? 'date' : '-'
+                    },
+                    yaxis: {
+                        ...plotlyLayout.yaxis,
+                        range: [minY - yPadding, maxY + yPadding],
                         autorange: false
                     }
                 };
@@ -1200,28 +1833,42 @@
                 return;
             }
 
-            container.innerHTML = legendItems.map(item => `
-                <div class="legend-item">
+            const escapeHtmlAttr = (str) => String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            
+            container.innerHTML = '';
+            
+            legendItems.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'legend-item';
+                
+                div.innerHTML = `
                     <input type="checkbox" 
                         class="visibility-toggle" 
-                        data-trace-id="${item.traceId}"
-                        ${item.visible ? 'checked' : ''}
-                        onchange="toggleTraceVisibility('${item.traceId}')">
+                        data-trace-id="${escapeHtmlAttr(item.traceId)}"
+                        ${item.visible ? 'checked' : ''}>
                     <div class="legend-color" style="background: ${item.color}; opacity: ${item.visible ? 1 : 0.3}"></div>
                     <div class="legend-info" style="opacity: ${item.visible ? 1 : 0.5}">${item.name}</div>
                     <div class="offset-controls">
                         <label class="offset-enable-label">
-                            <input type="checkbox" ${item.offsetEnabled ? 'checked' : ''} onchange="toggleTraceOffsetEnabled('${item.traceId}', this.checked)">
+                            <input type="checkbox" class="offset-enable-checkbox" data-trace-id="${escapeHtmlAttr(item.traceId)}" ${item.offsetEnabled ? 'checked' : ''}>
                             启用偏移
                         </label>
                         <label>X:</label>
-                        <input type="number" value="${item.xOffset}" step="0.1" style="width: 60px" onchange="updateTraceOffset('${item.traceId}', 'x', this.value)">
+                        <input type="number" class="offset-x-input" data-trace-id="${escapeHtmlAttr(item.traceId)}" value="${item.xOffset}" step="0.1" style="width: 60px">
                         <label>Y:</label>
-                        <input type="number" value="${item.yOffset}" step="0.1" style="width: 60px" onchange="updateTraceOffset('${item.traceId}', 'y', this.value)">
-                        <button class="btn btn-small" onclick="resetTraceOffset('${item.traceId}')">重置</button>
+                        <input type="number" class="offset-y-input" data-trace-id="${escapeHtmlAttr(item.traceId)}" value="${item.yOffset}" step="0.1" style="width: 60px">
+                        <button class="btn btn-small reset-offset-btn" data-trace-id="${escapeHtmlAttr(item.traceId)}">重置</button>
                     </div>
-                </div>
-            `).join('');
+                `;
+                
+                div.querySelector('.visibility-toggle').addEventListener('change', () => toggleTraceVisibility(item.traceId));
+                div.querySelector('.offset-enable-checkbox').addEventListener('change', (e) => toggleTraceOffsetEnabled(item.traceId, e.target.checked));
+                div.querySelector('.offset-x-input').addEventListener('change', (e) => updateTraceOffset(item.traceId, 'x', e.target.value));
+                div.querySelector('.offset-y-input').addEventListener('change', (e) => updateTraceOffset(item.traceId, 'y', e.target.value));
+                div.querySelector('.reset-offset-btn').addEventListener('click', () => resetTraceOffset(item.traceId));
+                
+                container.appendChild(div);
+            });
         }
         
         function toggleTraceVisibility(traceId) {
